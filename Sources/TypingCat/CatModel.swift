@@ -40,6 +40,15 @@ final class CatModel: ObservableObject {
     var onPetStart: (() -> Void)?
     var onPetEnd: (() -> Void)?
     private var rubEnergy = 0.0
+
+    // 旁边的小鼠标：跟着真实鼠标动
+    /// 小鼠标相对鼠标垫中心的偏移（设计单位）
+    var miniMouse = CGVector.zero
+    /// 在这个时间之前，猫的右爪搭在小鼠标上
+    var mouseActiveUntil: TimeInterval = 0
+    var mouseLeftDown = false
+    var mouseRightDown = false
+    private var lastScreenMouse: CGPoint?
     private var lastMouse: CGPoint?
 
     private var recent: [TimeInterval] = []
@@ -158,6 +167,25 @@ final class CatModel: ObservableObject {
             lastActivity = CatModel.now
             if mood == .sleeping { updateMood() }
         }
+    }
+
+    /// 约 30Hz 调用：真实鼠标的屏幕位置、所在屏幕、按键状态
+    func trackPointer(screen p: CGPoint, in frame: CGRect, buttons: Int) {
+        let now = CatModel.now
+        let moved = lastScreenMouse.map { hypot(p.x - $0.x, p.y - $0.y) > 1 } ?? false
+        lastScreenMouse = p
+        mouseLeftDown = buttons & 1 != 0
+        mouseRightDown = buttons & 2 != 0
+        if moved || buttons != 0 {
+            mouseActiveUntil = now + 1.0
+            lastActivity = now
+            if mood == .sleeping { updateMood() }
+        }
+        // 光标在屏幕上的位置 → 小鼠标在垫子上的位置（y 向下）
+        let tx = ((p.x - frame.minX) / max(frame.width, 1) - 0.5) * 10
+        let ty = (0.5 - (p.y - frame.minY) / max(frame.height, 1)) * 10
+        miniMouse.dx += (tx - miniMouse.dx) * 0.35
+        miniMouse.dy += (ty - miniMouse.dy) * 0.35
     }
 
     /// 被点了一下

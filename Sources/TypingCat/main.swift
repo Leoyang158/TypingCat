@@ -31,6 +31,10 @@ enum Snapshot {
                 m.letters = [FloatingLetter(text: "a", key: KeyPos(row: 1, col: 0), born: 0.55),
                              FloatingLetter(text: "i", key: I, born: 0.85)]
                 m.typedLine = "meow meow"; m.lastTypedAt = 0.9 }),
+            ("mouse", { m in
+                m.force(mood: .idle, left: nil, right: nil)
+                m.mouseActiveUntil = 2; m.mouseLeftDown = true
+                m.miniMouse = CGVector(dx: 3, dy: -2); m.mouse = CGPoint(x: 230, y: 160) }),
             ("petted", { m in m.force(mood: .idle, left: nil, right: nil); m.isPetted = true }),
             ("sleeping", { m in m.force(mood: .sleeping, left: nil, right: nil) }),
             ("permission", { m in m.force(mood: .idle, left: nil, right: nil); m.needsPermission = true }),

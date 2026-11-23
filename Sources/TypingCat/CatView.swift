@@ -39,6 +39,7 @@ private struct CatPainter {
         bodyShape(&ctx, breathe: breathe)
         head(&ctx, dy: headDY)
         keyboard(&ctx)
+        miniMouse(&ctx)
         paw(&ctx, left: true, key: model.leftKey)
         paw(&ctx, left: false, key: model.rightKey)
         effects(&ctx)
@@ -143,9 +144,9 @@ private struct CatPainter {
     func head(_ ctx: inout GraphicsContext, dy: Double) {
         var c = ctx
         c.translateBy(x: 0, y: dy)
-        if model.isPetted {
-            // 被 rua 时脑袋左右蹭
-            let a = sin(t * 5) * 0.05
+        if model.isPetted || mood == .idle {
+            // 被 rua 时脑袋左右蹭；发呆时慢慢歪头
+            let a = model.isPetted ? sin(t * 5) * 0.05 : sin(t * 0.8) * 0.06
             c.translateBy(x: 110, y: 120)
             c.rotate(by: .radians(a))
             c.translateBy(x: -110, y: -120)
@@ -182,6 +183,18 @@ private struct CatPainter {
         nose.addQuadCurve(to: CGPoint(x: 104, y: 82), control: CGPoint(x: 105, y: 87))
         c.fill(nose, with: .color(th.nose))
 
+        // 小舌头：平时露一点舌尖，专心打字时歪着伸出来
+        if !sleeping {
+            let typing = mood == .typing || mood == .excited
+            let tw = typing ? 7.5 : 6.0, tl = typing ? 8.0 : 4.5
+            let tx = typing ? 113.5 : 110.0
+            let tongue = CGRect(x: tx - tw / 2, y: 92.5, width: tw, height: tl)
+            c.fill(Path(roundedRect: tongue, cornerRadius: tw / 2), with: .color(Color(red: 1, green: 0.55, blue: 0.62)))
+            var mid = Path()
+            mid.move(to: CGPoint(x: tx, y: 94)); mid.addLine(to: CGPoint(x: tx, y: 92.5 + tl - 2.5))
+            c.stroke(mid, with: .color(Color(red: 0.85, green: 0.35, blue: 0.45).opacity(0.6)), lineWidth: 1)
+        }
+
         // 嘴巴 "ω"
         let ink = Color.black.opacity(0.45)
         var m = Path()
@@ -200,12 +213,32 @@ private struct CatPainter {
         }
         c.stroke(w, with: .color(th.light.opacity(0.9)), style: StrokeStyle(lineWidth: 1.3, lineCap: .round))
 
-        // 兴奋或开心时脸红
-        if mood == .excited || happy {
-            for x in [66.0, 138.0] {
-                c.fill(Path(ellipseIn: CGRect(x: x, y: 86, width: 16, height: 9)),
-                       with: .color(Color(red: 1, green: 0.45, blue: 0.5).opacity(0.45)))
-            }
+        // 腮红：平时淡淡的，兴奋或开心时更红
+        let blush = mood == .excited || happy ? 0.5 : 0.22
+        for x in [64.0, 140.0] {
+            c.fill(Path(ellipseIn: CGRect(x: x, y: 86, width: 16, height: 9)),
+                   with: .color(Color(red: 1, green: 0.45, blue: 0.5).opacity(blush)))
+        }
+
+        // 打字太快：头上冒汗珠
+        if mood == .excited {
+            let drop = CGPoint(x: 160, y: 40 + (t * 1.5).truncatingRemainder(dividingBy: 1) * 6)
+            var d = Path()
+            d.move(to: CGPoint(x: drop.x, y: drop.y - 8))
+            d.addQuadCurve(to: CGPoint(x: drop.x, y: drop.y + 4), control: CGPoint(x: drop.x + 8, y: drop.y + 2))
+            d.addQuadCurve(to: CGPoint(x: drop.x, y: drop.y - 8), control: CGPoint(x: drop.x - 8, y: drop.y + 2))
+            c.fill(d, with: .color(Color(red: 0.55, green: 0.78, blue: 0.98)))
+            c.fill(Path(ellipseIn: CGRect(x: drop.x - 2.5, y: drop.y - 2, width: 2.2, height: 3)), with: .color(.white.opacity(0.8)))
+        }
+
+        // 睡觉：鼻涕泡一大一小
+        if sleeping {
+            let r = 3 + 3.5 * abs(sin(t * 0.9))
+            let b = CGRect(x: 117, y: 84 - r, width: r * 2, height: r * 2)
+            c.fill(Path(ellipseIn: b), with: .color(Color(red: 0.75, green: 0.88, blue: 1).opacity(0.55)))
+            c.stroke(Path(ellipseIn: b), with: .color(.white.opacity(0.9)), lineWidth: 1)
+            c.fill(Path(ellipseIn: CGRect(x: b.minX + r * 0.5, y: b.minY + r * 0.4, width: r * 0.5, height: r * 0.5)),
+                   with: .color(.white.opacity(0.9)))
         }
     }
 
@@ -223,58 +256,75 @@ private struct CatPainter {
         ctx.stroke(inner, with: .color(th.innerEar), style: StrokeStyle(lineWidth: 3, lineJoin: .round))
     }
 
+    /// 发呆时每 9 秒对一次眼（持续约 1.6 秒）
+    var derp: Bool { mood == .idle && !happy && t.truncatingRemainder(dividingBy: 9) > 7.4 }
+
     func eyes(_ ctx: inout GraphicsContext) {
-        let centers = [CGPoint(x: 86, y: 68), CGPoint(x: 134, y: 68)]
-        let ink = Color.black.opacity(0.7)
+        // 眼距略宽，豆豆眼更显呆
+        let centers = [CGPoint(x: 84, y: 69), CGPoint(x: 136, y: 69)]
+        let ink = Color.black.opacity(0.75)
+        let line = StrokeStyle(lineWidth: 2.8, lineCap: .round, lineJoin: .round)
 
         // 每 ~4.3 秒眨一次眼
         let blinking = mood != .sleeping && t.truncatingRemainder(dividingBy: 4.3) < 0.14
 
-        for c in centers {
+        for (i, c) in centers.enumerated() {
+            let isLeft = i == 0
             if happy {
                 // 开心的 ^ ^ 眼
                 var p = Path()
                 p.move(to: CGPoint(x: c.x - 10, y: c.y + 4))
                 p.addQuadCurve(to: CGPoint(x: c.x + 10, y: c.y + 4), control: CGPoint(x: c.x, y: c.y - 10))
-                ctx.stroke(p, with: .color(ink), style: StrokeStyle(lineWidth: 2.6, lineCap: .round))
+                ctx.stroke(p, with: .color(ink), style: line)
             } else if sleeping {
                 var p = Path()
                 p.move(to: CGPoint(x: c.x - 10, y: c.y))
                 p.addQuadCurve(to: CGPoint(x: c.x + 10, y: c.y), control: CGPoint(x: c.x, y: c.y + 8))
-                ctx.stroke(p, with: .color(ink), style: StrokeStyle(lineWidth: 2.4, lineCap: .round))
+                ctx.stroke(p, with: .color(ink), style: line)
+            } else if mood == .excited {
+                // 手忙脚乱的 > <
+                let d: Double = isLeft ? 1 : -1
+                var p = Path()
+                p.move(to: CGPoint(x: c.x - 7 * d, y: c.y - 7))
+                p.addLine(to: CGPoint(x: c.x + 6 * d, y: c.y))
+                p.addLine(to: CGPoint(x: c.x - 7 * d, y: c.y + 7))
+                ctx.stroke(p, with: .color(ink), style: StrokeStyle(lineWidth: 3.2, lineCap: .round, lineJoin: .round))
             } else if blinking {
                 var p = Path()
                 p.move(to: CGPoint(x: c.x - 10, y: c.y + 1))
                 p.addLine(to: CGPoint(x: c.x + 10, y: c.y + 1))
-                ctx.stroke(p, with: .color(ink), style: StrokeStyle(lineWidth: 2.4, lineCap: .round))
+                ctx.stroke(p, with: .color(ink), style: line)
             } else {
-                let r = 12.0
+                // 大圆豆豆眼：瞳孔又大又圆，两颗高光
+                let r = 13.0
                 ctx.fill(Path(ellipseIn: CGRect(x: c.x - r, y: c.y - r, width: r * 2, height: r * 2)),
                          with: .color(th.eye))
-                // 打字时盯着键盘；否则眼睛跟着鼠标转。兴奋时瞳孔放大变圆
-                let look = lookOffset(from: c)
-                let pw = mood == .excited ? 15.0 : 8.0
-                let ph = mood == .excited ? 15.0 : 17.0
-                ctx.fill(Path(ellipseIn: CGRect(x: c.x - pw / 2 + look.dx, y: c.y - ph / 2 + look.dy,
-                                                width: pw, height: ph)),
+                var look = lookOffset(from: c)
+                if derp {
+                    // 对眼：两只瞳孔都往鼻子靠
+                    look = CGVector(dx: isLeft ? 4.5 : -4.5, dy: 1.5)
+                }
+                let pr = 8.5
+                let pc = CGPoint(x: c.x + look.dx, y: c.y + look.dy)
+                ctx.fill(Path(ellipseIn: CGRect(x: pc.x - pr, y: pc.y - pr, width: pr * 2, height: pr * 2)),
                          with: .color(Color(white: 0.08)))
-                ctx.fill(Path(ellipseIn: CGRect(x: c.x + 1 + look.dx * 0.5, y: c.y - 7 + look.dy * 0.5,
-                                                width: 5, height: 5)),
+                ctx.fill(Path(ellipseIn: CGRect(x: pc.x + 0.5, y: pc.y - 6.5, width: 6, height: 6)),
                          with: .color(.white))
+                ctx.fill(Path(ellipseIn: CGRect(x: pc.x - 5, y: pc.y + 2, width: 2.8, height: 2.8)),
+                         with: .color(.white.opacity(0.9)))
             }
         }
     }
 
-    /// 瞳孔偏移：最多 4.5（设计单位），朝向鼠标
+    /// 瞳孔偏移：最多 4.5（设计单位），朝向鼠标；打字时盯着键盘
     func lookOffset(from eye: CGPoint) -> CGVector {
-        if mood == .typing || mood == .excited { return CGVector(dx: 0, dy: 3) }
+        if mood == .typing || mood == .excited { return CGVector(dx: 0, dy: 3.5) }
         guard let m = model.mouse else { return .zero }
         let dx = m.x - eye.x, dy = m.y - eye.y
         let d = hypot(dx, dy)
         guard d > 0.5 else { return .zero }
-        let k = min(d / 50, 1) / d
-        // 瞳孔竖长，横向可以多转一点，纵向受眼眶限制
-        return CGVector(dx: dx * k * 5.5, dy: dy * k * 3.5)
+        let k = min(d / 50, 1) * 4.5 / d
+        return CGVector(dx: dx * k, dy: dy * k)
     }
 
     func keyboard(_ ctx: inout GraphicsContext) {
@@ -306,7 +356,55 @@ private struct CatPainter {
             let x = key.row == 3 ? r.midX + (left ? -14 : 14) : r.midX
             return CGPoint(x: x, y: r.midY + 1)
         }
+        // 右爪搭在小鼠标上；点击时往下按一点
+        if !left && usingMouse {
+            let m = miniMouseCenter
+            let press = model.mouseLeftDown || model.mouseRightDown ? 2.0 : 0
+            return CGPoint(x: m.x - 8, y: m.y - 15 + press)
+        }
         return CGPoint(x: sx, y: sleeping ? 136 : 120)
+    }
+
+    // MARK: - 小鼠标
+
+    var usingMouse: Bool { t < model.mouseActiveUntil }
+    static let padRect = CGRect(x: 190, y: 133, width: 28, height: 34)
+    var miniMouseCenter: CGPoint {
+        CGPoint(x: Self.padRect.midX + model.miniMouse.dx, y: Self.padRect.midY + 1 + model.miniMouse.dy)
+    }
+
+    func miniMouse(_ ctx: inout GraphicsContext) {
+        let pad = Self.padRect
+        ctx.fill(Path(ellipseIn: CGRect(x: pad.minX - 2, y: pad.maxY - 4, width: pad.width + 4, height: 8)),
+                 with: .color(.black.opacity(0.15)))
+        ctx.fill(Path(roundedRect: pad, cornerRadius: 6), with: .color(Color(red: 0.36, green: 0.39, blue: 0.44)))
+
+        let c = miniMouseCenter
+        let body = CGRect(x: c.x - 9, y: c.y - 13, width: 18, height: 26)
+        // 线连到键盘
+        var cord = Path()
+        cord.move(to: CGPoint(x: c.x, y: body.minY))
+        cord.addQuadCurve(to: CGPoint(x: 186, y: 131), control: CGPoint(x: c.x - 2, y: 122))
+        ctx.stroke(cord, with: .color(Color(red: 0.24, green: 0.26, blue: 0.30)), lineWidth: 1.5)
+
+        let shell = Color(red: 0.93, green: 0.94, blue: 0.95)
+        let pressed = Color(red: 0.70, green: 0.73, blue: 0.77)
+        ctx.fill(Path(roundedRect: body, cornerRadius: 9), with: .color(shell))
+        // 左右键
+        var cg = ctx
+        cg.clip(to: Path(roundedRect: body, cornerRadius: 9))
+        let half = body.width / 2, top = body.height * 0.42
+        if model.mouseLeftDown {
+            cg.fill(Path(CGRect(x: body.minX, y: body.minY, width: half, height: top)), with: .color(pressed))
+        }
+        if model.mouseRightDown {
+            cg.fill(Path(CGRect(x: body.midX, y: body.minY, width: half, height: top)), with: .color(pressed))
+        }
+        var seams = Path()
+        seams.move(to: CGPoint(x: body.midX, y: body.minY)); seams.addLine(to: CGPoint(x: body.midX, y: body.minY + top))
+        seams.move(to: CGPoint(x: body.minX, y: body.minY + top)); seams.addLine(to: CGPoint(x: body.maxX, y: body.minY + top))
+        cg.stroke(seams, with: .color(.black.opacity(0.18)), lineWidth: 1)
+        ctx.stroke(Path(roundedRect: body, cornerRadius: 9), with: .color(.black.opacity(0.15)), lineWidth: 1)
     }
 
     func paw(_ ctx: inout GraphicsContext, left: Bool, key: KeyPos?) {
@@ -343,6 +441,19 @@ private struct CatPainter {
                     .foregroundColor(Color(red: 0.45, green: 0.55, blue: 0.75).opacity(1 - phase))
                 ctx.draw(text, at: CGPoint(x: x, y: y))
             }
+        }
+
+        // 点鼠标时的冲击线
+        if usingMouse && (model.mouseLeftDown || model.mouseRightDown) {
+            let m = miniMouseCenter
+            var p = Path()
+            // 画在鼠标下方，避免超出窗口右边缘
+            for (a, b) in [((m.x - 7, m.y + 15), (m.x - 10, m.y + 20)),
+                           ((m.x, m.y + 16), (m.x, m.y + 21)),
+                           ((m.x + 7, m.y + 15), (m.x + 10, m.y + 20))] {
+                p.move(to: CGPoint(x: a.0, y: a.1)); p.addLine(to: CGPoint(x: b.0, y: b.1))
+            }
+            ctx.stroke(p, with: .color(Color.orange.opacity(0.85)), style: StrokeStyle(lineWidth: 2, lineCap: .round))
         }
 
         // 被 rua 时冒爱心

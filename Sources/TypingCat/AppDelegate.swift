@@ -111,6 +111,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     func trackMouse() {
         guard let panel, panel.isVisible else { model.trackMouse(nil); return }
         let m = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { NSMouseInRect(m, $0.frame, false) } ?? NSScreen.main
+        model.trackPointer(screen: m, in: screen?.frame ?? .zero, buttons: NSEvent.pressedMouseButtons)
         let f = panel.frame
         let p = CGPoint(x: (m.x - f.minX) / f.width * CatView.designSize.width,
                         y: (f.maxY - m.y) / f.height * CatView.designSize.height)
