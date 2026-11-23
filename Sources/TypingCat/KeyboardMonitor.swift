@@ -2,8 +2,15 @@ import AppKit
 import ApplicationServices
 import CoreGraphics
 
+/// 一次按键：键码 + 产生的字符（只用于屏幕上短暂显示，不保存）
+struct KeyInfo {
+    var keyCode: Int
+    var chars: String
+    var command: Bool
+}
+
 /// 全局键盘监听（只监听、不拦截）。
-/// 只向外发出"有一次按键"，不读取也不保存按了哪个键。
+/// 按键信息只交给猫咪做动画和短暂显示，不写入磁盘、不上传。
 ///
 /// 两条路径，满足任意一种权限即可：
 /// - 「输入监控」→ CGEventTap（listen-only）
@@ -11,7 +18,7 @@ import CoreGraphics
 final class KeyboardMonitor {
     enum Status { case needsPermission, running }
 
-    var onKey: (() -> Void)?
+    var onKey: ((KeyInfo) -> Void)?
     private(set) var status: Status = .needsPermission
     private var received = 0
     private var tap: CFMachPort?
@@ -63,10 +70,10 @@ final class KeyboardMonitor {
         return true
     }
 
-    fileprivate func handleKey() {
+    fileprivate func handleKey(_ info: KeyInfo) {
         received += 1
         if received == 1 { DebugLog.write("收到第一次按键事件 ✅") }
-        onKey?()
+        onKey?(info)
     }
 
     // MARK: - 路径 1：CGEventTap
@@ -88,7 +95,14 @@ final class KeyboardMonitor {
                 case .keyDown:
                     // 长按自动重复不算
                     if event.getIntegerValueField(.keyboardEventAutorepeat) == 0 {
-                        monitor.handleKey()
+                        var len = 0
+                        var buf = [UniChar](repeating: 0, count: 8)
+                        event.keyboardGetUnicodeString(maxStringLength: 8, actualStringLength: &len, unicodeString: &buf)
+                        let info = KeyInfo(
+                            keyCode: Int(event.getIntegerValueField(.keyboardEventKeycode)),
+                            chars: String(utf16CodeUnits: buf, count: len),
+                            command: event.flags.contains(.maskCommand))
+                        DispatchQueue.main.async { monitor.handleKey(info) }
                     }
                 default: break
                 }
@@ -110,7 +124,9 @@ final class KeyboardMonitor {
 
     private func startGlobalMonitor() -> Bool {
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] e in
-            if !e.isARepeat { self?.handleKey() }
+            guard !e.isARepeat else { return }
+            self?.handleKey(KeyInfo(keyCode: Int(e.keyCode), chars: e.characters ?? "",
+                                    command: e.modifierFlags.contains(.command)))
         }
         return globalMonitor != nil
     }

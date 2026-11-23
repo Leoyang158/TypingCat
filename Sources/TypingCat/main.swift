@@ -18,20 +18,29 @@ app.run()
 enum Snapshot {
     static func render(to dir: URL) {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let cases: [(String, CatMood, Bool, Bool)] = [
-            ("idle", .idle, false, false),
-            ("typing", .typing, true, false),
-            ("excited", .excited, false, true),
-            ("sleeping", .sleeping, false, false),
-            ("permission", .idle, false, false),
+        // 截图时间固定为 t = 1.0
+        let D = KeyPos(row: 1, col: 2), I = KeyPos(row: 0, col: 7)
+        let cases: [(String, (CatModel) -> Void)] = [
+            ("idle", { m in m.force(mood: .idle, left: nil, right: nil); m.mouse = CGPoint(x: 215, y: 10) }),
+            ("typing", { m in
+                m.force(mood: .typing, left: D, right: nil)
+                m.letters = [FloatingLetter(text: "d", key: D, born: 0.8)]
+                m.typedLine = "hello cat"; m.lastTypedAt = 0.9 }),
+            ("excited", { m in
+                m.force(mood: .excited, left: nil, right: I)
+                m.letters = [FloatingLetter(text: "a", key: KeyPos(row: 1, col: 0), born: 0.55),
+                             FloatingLetter(text: "i", key: I, born: 0.85)]
+                m.typedLine = "meow meow"; m.lastTypedAt = 0.9 }),
+            ("petted", { m in m.force(mood: .idle, left: nil, right: nil); m.isPetted = true }),
+            ("sleeping", { m in m.force(mood: .sleeping, left: nil, right: nil) }),
+            ("permission", { m in m.force(mood: .idle, left: nil, right: nil); m.needsPermission = true }),
         ]
         for theme in CatTheme.presets {
-            for (name, mood, l, r) in cases {
+            for (name, setup) in cases {
                 if theme.id != "blue" && name != "typing" { continue }
                 let model = CatModel()
                 model.theme = theme
-                model.force(mood: mood, left: l, right: r)
-                model.needsPermission = name == "permission"
+                setup(model)
                 let view = CatView(model: model, fixedTime: 1.0)
                     .frame(width: CatView.designSize.width * 2, height: CatView.designSize.height * 2)
                     .background(Color(white: 0.97))

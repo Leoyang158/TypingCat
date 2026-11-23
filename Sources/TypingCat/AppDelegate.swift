@@ -10,6 +10,8 @@ enum CatSize: String, CaseIterable {
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWindowDelegate {
     let model = CatModel()
     let keyboard = KeyboardMonitor()
+    let sound = CatSound()
+    var mouseTimer: Timer?
     var panel: CatPanel!
     var statusItem: NSStatusItem!
     var hasPermission = false
@@ -71,7 +73,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         statusItem.menu = menu
 
         DebugLog.write("启动 \(Bundle.main.bundlePath)")
-        keyboard.onKey = { [weak self] in self?.model.keyPressed() }
+        keyboard.onKey = { [weak self] info in self?.model.keyPressed(info) }
+
+        // rua：开始时喵一声并打呼噜，结束时停下
+        model.onPetStart = { [weak self] in
+            self?.sound.meow(cooldown: 4)
+            self?.sound.startPurr()
+        }
+        model.onPetEnd = { [weak self] in self?.sound.stopPurr() }
+
+        // 眼睛跟随鼠标 + rua 检测（读取鼠标位置不需要任何权限）
+        let mt = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in self?.trackMouse() }
+        RunLoop.main.add(mt, forMode: .common)
+        mouseTimer = mt
         if !KeyboardMonitor.hasAnyPermission { KeyboardMonitor.requestPermission() }
         keyboard.start { [weak self] status in
             guard let self else { return }
@@ -87,8 +101,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
 
     /// 没权限时点击猫：打开系统设置，并给一个"授权后重启"的按钮
     func catClicked() {
-        guard !hasPermission else { return }
-        openPermission()
+        guard hasPermission else { openPermission(); return }
+        // 点一下：开心地喵一声
+        model.poke()
+        sound.meow()
+    }
+
+    /// 把屏幕上的鼠标位置换算到猫的设计坐标系（220 x 180，y 向下）
+    func trackMouse() {
+        guard let panel, panel.isVisible else { model.trackMouse(nil); return }
+        let m = NSEvent.mouseLocation
+        let f = panel.frame
+        let p = CGPoint(x: (m.x - f.minX) / f.width * CatView.designSize.width,
+                        y: (f.maxY - m.y) / f.height * CatView.designSize.height)
+        model.trackMouse(p)
     }
 
     @objc func openPermission() {
@@ -231,6 +257,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         ct.state = clickThrough ? .on : .off
         m.addItem(ct)
 
+        let letters = item("显示敲的字母", #selector(toggleLetters))
+        letters.state = model.showLetters ? .on : .off
+        m.addItem(letters)
+
+        let snd = item("声音（喵 / 呼噜）", #selector(toggleSound))
+        snd.state = sound.enabled ? .on : .off
+        m.addItem(snd)
+
         let login = item("开机自动启动", #selector(toggleLogin))
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         m.addItem(login)
@@ -287,6 +321,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     @objc func toggleClickThrough() { clickThrough.toggle() }
+    @objc func toggleLetters() { model.showLetters.toggle() }
+    @objc func toggleSound() {
+        sound.enabled.toggle()
+        if sound.enabled { sound.meow(cooldown: 0) }
+    }
 
     @objc func toggleLogin() {
         do {
