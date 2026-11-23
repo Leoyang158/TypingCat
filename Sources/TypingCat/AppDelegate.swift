@@ -21,8 +21,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
     var clickThrough: Bool {
         get { defaults.bool(forKey: "clickThrough") }
-        set { defaults.set(newValue, forKey: "clickThrough"); panel.ignoresMouseEvents = newValue }
+        set { defaults.set(newValue, forKey: "clickThrough"); updateMouseInteraction() }
     }
+
+    // MARK: - 鼠标穿透：按住 ⌘ 临时恢复交互
+
+    var modifierTimer: Timer?
+    var menuIsOpen = false
+
+    /// 统一决定猫窗口是否接收鼠标事件
+    func updateMouseInteraction() {
+        guard let panel else { return }
+        guard clickThrough else {
+            modifierTimer?.invalidate(); modifierTimer = nil
+            panel.ignoresMouseEvents = false
+            return
+        }
+        if modifierTimer == nil {
+            // NSEvent.modifierFlags 是全局修饰键状态，读取不需要额外权限
+            modifierTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+                self?.updateMouseInteraction()
+            }
+        }
+        let cmdHeld = NSEvent.modifierFlags.contains(.command)
+        let busy = menuIsOpen || (!panel.ignoresMouseEvents && NSEvent.pressedMouseButtons != 0)
+        let ignore = !(cmdHeld || busy)
+        if panel.ignoresMouseEvents != ignore { panel.ignoresMouseEvents = ignore }
+    }
+
+    func menuWillOpen(_ menu: NSMenu) { menuIsOpen = true }
+    func menuDidClose(_ menu: NSMenu) { menuIsOpen = false }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -31,7 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
                          menuProvider: { [weak self] in self?.buildMenu() ?? NSMenu() },
                          onClick: { [weak self] in self?.catClicked() })
         panel.delegate = self
-        panel.ignoresMouseEvents = clickThrough
+        updateMouseInteraction()
         applySize()
         restorePosition()
         if defaults.object(forKey: "visible") as? Bool ?? true { panel.orderFrontRegardless() }
@@ -143,12 +171,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     // MARK: - 菜单
 
     func menuNeedsUpdate(_ menu: NSMenu) {
+        // 只有菜单栏菜单需要每次重建；右键菜单本来就是现建的
+        guard menu === statusItem?.menu else { return }
         menu.removeAllItems()
         for item in buildMenu().items { item.menu?.removeItem(item); menu.addItem(item) }
     }
 
     func buildMenu() -> NSMenu {
         let m = NSMenu()
+        m.delegate = self   // 追踪菜单开关，穿透模式下菜单打开期间保持可交互
 
         if hasPermission {
             let ok = NSMenuItem(title: "✅ 键盘监听中", action: nil, keyEquivalent: "")
@@ -196,7 +227,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         sizeItem.submenu = sizeMenu
         m.addItem(sizeItem)
 
-        let ct = item("鼠标穿透（不可拖动）", #selector(toggleClickThrough))
+        let ct = item("鼠标穿透（按住 ⌘ 可拖动 / 右键）", #selector(toggleClickThrough))
         ct.state = clickThrough ? .on : .off
         m.addItem(ct)
 
