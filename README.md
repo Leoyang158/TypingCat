@@ -18,7 +18,15 @@
 
 <p align="center"><img src="docs/colors.png" width="660" alt="毛色预览"></p>
 
-## 安装
+## 下载使用（推荐）
+
+1. 到 [Releases](https://github.com/Leoyang158/TypingCat/releases/latest) 下载 `TypingCat-x.y.z.zip`，解压后把 **TypingCat.app** 拖进「应用程序」文件夹。支持 Apple 芯片和 Intel，需要 macOS 14 以上。
+2. 第一次打开时，macOS 会提示「无法验证开发者」，因为这个 App 没有经过 Apple 公证。任选一种方法放行：
+   - 先双击一次，然后打开「系统设置 → 隐私与安全性」，在页面底部点 **「仍要打开」**
+   - 或者在终端运行：`xattr -dr com.apple.quarantine /Applications/TypingCat.app`
+3. 按提示在「隐私与安全性 → 输入监控」里打开 TypingCat，然后点「我已授权，重新启动」。
+
+## 从源码构建
 
 需要 macOS 14 以上版本和 Xcode（或 Command Line Tools）。
 
@@ -49,6 +57,7 @@ TypingCat 只统计"按了一下"这件事，**不读取、不记录、不上传
 ```bash
 swift build
 .build/debug/TypingCat --snapshot /tmp/snap   # 把各种状态渲染成 PNG，方便检查画面
+./scripts/release.sh                          # 打包通用版 zip 到 dist/，用于发布
 ```
 
 | 文件 | 作用 |

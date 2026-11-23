@@ -6,10 +6,17 @@ cd "$(dirname "$0")/.."
 IDENTITY="TypingCat Dev"
 APP="build/TypingCat.app"
 
-swift build -c release
+# UNIVERSAL=1 时同时编译 Apple 芯片和 Intel（用于发布）
+if [ "${UNIVERSAL:-0}" = "1" ]; then
+    swift build -c release --arch arm64 --arch x86_64
+    BIN=.build/apple/Products/Release/TypingCat
+else
+    swift build -c release
+    BIN=.build/release/TypingCat
+fi
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp .build/release/TypingCat "$APP/Contents/MacOS/TypingCat"
+cp "$BIN" "$APP/Contents/MacOS/TypingCat"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
 # 没有固定证书就自动生成一个（只会发生一次）
